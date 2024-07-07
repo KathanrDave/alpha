@@ -1,12 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import Webcam from "react-webcam";
 import { Card, Button, message } from "antd";
-const IPFS = require("ipfs-api");
-const ipfs = new IPFS({
-  host: "ipfs.infura.io",
-  port: 5001,
-  protocol: "https",
-});
+import axios from "axios";
+
+const pinataApiKey = "ce0fb75180bb4ae9c877";  // Replace with your Pinata API key
+const pinataSecretApiKey = "a820627343b427c5d162d4bc8d44758dc2ee79aeab4c6203665f586beea22b0f";
 
 function dataURLtoFile(dataurl, filename) {
   var arr = dataurl.split(","),
@@ -22,46 +20,62 @@ function dataURLtoFile(dataurl, filename) {
 
 const Selfie = ({ formData, setformData, handelStatus }) => {
   const webcamRef = useRef(null);
-  const [buffer, setbuffer] = useState([0]);
+  const [buffer, setbuffer] = useState([null]);
   const [isLoading, setisLoading] = useState(false);
 
   const handleOk = () => {
     capture();
   };
 
-  const capture = React.useCallback(() => {
+  const capture = useCallback(() => {
     const imageSrc = webcamRef.current.getScreenshot();
     var file = dataURLtoFile(imageSrc, "selfie.png");
     const reader = new window.FileReader();
     reader.readAsArrayBuffer(file);
     reader.onloadend = () => {
-      let buf = buffer;
-      buf[0] = Buffer(reader.result);
-      setbuffer(buf);
-      message.success("Selfie Clicked")
+      const newBuffer = [reader.result];
+      setbuffer(newBuffer);
+      message.success("Selfie Clicked");
     };
     // eslint-disable-next-line
   }, [webcamRef]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setisLoading(true);
-    ipfs.files.add(buffer, (error, result) => {
+    try {
+      const result = await uploadToPinata(buffer[0]);
       setisLoading(false);
-      if (error) {
-        console.error(error);
-        message.error("Something went wrong!");
-        return;
-      }
-      setformData({ ...formData, selfieIPFS: result[0].hash });
-      handelStatus(3)
+      setformData({ ...formData, selfieIPFS: result.IpfsHash });
+      handelStatus(3);
+    } catch (error) {
+      setisLoading(false);
+      console.error(error);
+      message.error("Something went wrong!");
+    }
+  };
+
+  const uploadToPinata = async (fileBuffer) => {
+    const url = `https://api.pinata.cloud/pinning/pinFileToIPFS`;
+    let data = new FormData();
+    data.append('file', new Blob([fileBuffer], { type: 'application/octet-stream' }));
+
+    const response = await axios.post(url, data, {
+      maxContentLength: 'Infinity',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${data._boundary}`,
+        'pinata_api_key': pinataApiKey,
+        'pinata_secret_api_key': pinataSecretApiKey,
+      },
     });
+
+    return response.data;
   };
 
   return (
     <>
       <Card style={{ width: "40%", margin: "20px auto" }}>
-        <Webcam style={{ width: "100%" }} ref={webcamRef} />
+        <Webcam style={{ width: "100%" }} ref={webcamRef} screenshotFormat="image/png" />
         <Button
           type="primary"
           style={{ display: "flex", margin: "auto" }}
@@ -72,7 +86,7 @@ const Selfie = ({ formData, setformData, handelStatus }) => {
       </Card>
       <div style={{ display: "flex", justifyContent: "center" }}>
         <Button
-          type="ghoast"
+          type="ghost"
           style={{ margin: "0 10px" }}
           onClick={() => handelStatus(1)}
         >

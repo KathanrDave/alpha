@@ -1,44 +1,52 @@
 import { Button, Form, Input, message } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { useState } from "react";
-const IPFS = require("ipfs-api");
-const projectId = "3b491f89f4de4fdfb30f68795206b682";  // Your Infura project ID
-const projectSecret = "YOUR_PROJECT_SECRET";  // Replace with your Infura project secret
-const auth = "Basic " + Buffer.from(projectId + ":" + projectSecret).toString("base64");
+import axios from "axios";
 
-const ipfs = new IPFS({
-  host: "ipfs.infura.io",
-  port: 5001,
-  protocol: "https",
-  headers: {
-    authorization: auth,
-  },
-});
+const pinataApiKey = "ce0fb75180bb4ae9c877";  // Replace with your Pinata API key
+const pinataSecretApiKey = "a820627343b427c5d162d4bc8d44758dc2ee79aeab4c6203665f586beea22b0f";
 
 const Documents = ({ formData, setformData, handelStatus }) => {
-  const [buffer, setbuffer] = useState([0, 1]);
+  const [buffer, setbuffer] = useState([null, null]);
   const [isLoading, setisLoading] = useState(false);
 
-  const handelNext = () => {
-    if (buffer[0] !== 0 && buffer[1] !== 1) {
+  const handelNext = async () => {
+    if (buffer[0] && buffer[1]) {
       setisLoading(true);
-      ipfs.files.add(buffer, (error, result) => {
+      try {
+        const results = await Promise.all(buffer.map(uploadToPinata));
         setisLoading(false);
-        if (error) {
-          console.error(error);
-          message.error("Something went wrong!");
-          return;
-        }
         setformData({
           ...formData,
-          panIPFS: result[0].hash,
-          aadharIPFS: result[1].hash,
+          panIPFS: results[0].IpfsHash,
+          aadharIPFS: results[1].IpfsHash,
         });
         handelStatus(2);
-      });
+      } catch (error) {
+        setisLoading(false);
+        console.error(error);
+        message.error("Something went wrong!");
+      }
     } else {
       message.error("Please choose Documents");
     }
+  };
+
+  const uploadToPinata = async (fileBuffer) => {
+    const url = `https://api.pinata.cloud/pinning/pinFileToIPFS`;
+    let data = new FormData();
+    data.append('file', new Blob([fileBuffer], { type: 'application/octet-stream' }));
+
+    const response = await axios.post(url, data, {
+      maxContentLength: 'Infinity',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${data._boundary}`,
+        'pinata_api_key': pinataApiKey,
+        'pinata_secret_api_key': pinataSecretApiKey,
+      },
+    });
+
+    return response.data;
   };
 
   const captureFile = (e, i) => {
@@ -46,10 +54,9 @@ const Documents = ({ formData, setformData, handelStatus }) => {
     const reader = new window.FileReader();
     reader.readAsArrayBuffer(file);
     reader.onloadend = () => {
-      let buf = buffer;
-      console.log(e, i);
-      buf[i] = Buffer(reader.result);
-      setbuffer(buf);
+      const newBuffer = [...buffer];
+      newBuffer[i] = reader.result;
+      setbuffer(newBuffer);
     };
   };
 
@@ -75,7 +82,7 @@ const Documents = ({ formData, setformData, handelStatus }) => {
       </Form>
       <div style={{ display: "flex", justifyContent: "center" }}>
         <Button
-          type="ghoast"
+          type="ghost"
           style={{ margin: "0 10px" }}
           onClick={() => handelStatus(0)}
         >
